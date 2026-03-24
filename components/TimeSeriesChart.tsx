@@ -14,35 +14,66 @@ interface TimeSeriesChartProps {
 
 export default function TimeSeriesChart({ indicator, height = 300 }: TimeSeriesChartProps) {
   const { historical, imfForecast, forecasts, config } = indicator;
-
-  // Build chart data: historical + IMF forecast + consensus dots
   const consensus = calculateConsensus(forecasts);
+  const currentYear = new Date().getFullYear();
 
-  // Merge all data by year
+  // Merge all data by year into a single array
   const merged = new Map<string, any>();
 
+  // Historical data → "actual" key
   historical.forEach((d) => {
-    merged.set(d.date, { ...merged.get(d.date), date: d.date, actual: d.value });
+    const entry = merged.get(d.date) || { date: d.date };
+    entry.actual = d.value;
+    merged.set(d.date, entry);
   });
 
+  // IMF forecast → "imf" key
+  // Also bridge: if current year is in both historical & forecast, set both keys
   imfForecast.forEach((d) => {
-    merged.set(d.date, { ...merged.get(d.date), date: d.date, imf: d.value });
+    const entry = merged.get(d.date) || { date: d.date };
+    entry.imf = d.value;
+    // For the bridge year (current year), also copy actual if present
+    if (Number(d.date) === currentYear && entry.actual == null) {
+      entry.actual = d.value;
+    }
+    merged.set(d.date, entry);
   });
 
+  // Bridge: make sure the last actual year also has an imf value
+  // so the two lines visually connect
+  if (historical.length > 0 && imfForecast.length > 0) {
+    const lastHistorical = historical[historical.length - 1];
+    const entry = merged.get(lastHistorical.date);
+    if (entry && entry.imf == null) {
+      entry.imf = lastHistorical.value;
+      merged.set(lastHistorical.date, entry);
+    }
+  }
+
+  // Consensus dots
   consensus.forEach((c) => {
     const yr = c.year.replace(/[ef]$/, '');
-    merged.set(yr, {
-      ...merged.get(yr),
-      date: yr,
-      consensus: c.mean,
-      consensus_high: c.high,
-      consensus_low: c.low,
-    });
+    const entry = merged.get(yr) || { date: yr };
+    entry.consensus = c.mean;
+    entry.consensus_high = c.high;
+    entry.consensus_low = c.low;
+    merged.set(yr, entry);
   });
 
-  const chartData = Array.from(merged.values())
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .slice(-20); // Last 20 years
+  const allData = Array.from(merged.values())
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  // Show last ~20 years of data for readability
+  const chartData = allData.slice(-20);
+
+  // Handle empty data
+  if (chartData.length === 0) {
+    return (
+      <div className="flex items-center justify-center text-mist/40 font-mono text-xs" style={{ height }}>
+        No data available — IMF API may be loading
+      </div>
+    );
+  }
 
   const hasNegative = chartData.some(
     (d) => (d.actual ?? 0) < 0 || (d.imf ?? 0) < 0 || (d.consensus ?? 0) < 0
@@ -87,7 +118,7 @@ export default function TimeSeriesChart({ indicator, height = 300 }: TimeSeriesC
           formatter={(val: number, name: string) => {
             const labels: Record<string, string> = {
               actual: 'Actual',
-              imf: 'IMF WEO',
+              imf: 'IMF WEO Forecast',
               consensus: 'Consensus',
             };
             return [`${val.toFixed(1)} ${config.unit}`, labels[name] || name];
@@ -95,7 +126,15 @@ export default function TimeSeriesChart({ indicator, height = 300 }: TimeSeriesC
         />
         {hasNegative && <ReferenceLine y={0} stroke="#475569" strokeDasharray="3 3" />}
 
-        {/* Historical */}
+        {/* Vertical reference line at current year */}
+        <ReferenceLine
+          x={String(currentYear)}
+          stroke="#475569"
+          strokeDasharray="4 4"
+          label={{ value: 'Now', position: 'top', fill: '#94a3b8', fontSize: 9, fontFamily: 'IBM Plex Mono' }}
+        />
+
+        {/* Historical (solid blue) */}
         <Area
           type="monotone"
           dataKey="actual"
@@ -106,7 +145,7 @@ export default function TimeSeriesChart({ indicator, height = 300 }: TimeSeriesC
           connectNulls
         />
 
-        {/* IMF Forecast */}
+        {/* IMF Forecast (dashed gold) — bridges from last actual year */}
         <Area
           type="monotone"
           dataKey="imf"
@@ -118,7 +157,7 @@ export default function TimeSeriesChart({ indicator, height = 300 }: TimeSeriesC
           connectNulls
         />
 
-        {/* Consensus mean */}
+        {/* Consensus dots (purple) */}
         <Line
           type="monotone"
           dataKey="consensus"

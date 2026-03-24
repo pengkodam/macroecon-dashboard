@@ -134,9 +134,17 @@ export default function Dashboard() {
             <div className="bg-ink/50 border border-slate/50 rounded-xl backdrop-blur-sm overflow-hidden mb-8 animate-fade-in animate-fade-in-delay-1">
               <div className="px-5 py-3 border-b border-slate/40 flex items-center justify-between">
                 <h2 className="font-display text-base text-pearl">Forecast Overview</h2>
-                <span className="text-[9px] font-mono text-mist/40">
-                  Consensus = mean of institutional forecasts
-                </span>
+                <div className="flex items-center gap-3 text-[9px] font-mono text-mist/40">
+                  <span className="flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-gold inline-block" />
+                    <strong className="text-gold/70">e</strong> = estimate (partial year data)
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amethyst inline-block" />
+                    <strong className="text-amethyst/70">f</strong> = forecast (projection)
+                  </span>
+                  <span className="hidden sm:inline">· Consensus = mean of institutions</span>
+                </div>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">

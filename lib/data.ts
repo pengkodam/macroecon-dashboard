@@ -63,6 +63,43 @@ const IMF_MAP: Record<string, string> = {
   population: 'LP',
 };
 
+// World Bank indicator codes (fallback for historical data)
+const WB_MAP: Record<string, string> = {
+  gdp_growth: 'NY.GDP.MKTP.KD.ZG',
+  inflation: 'FP.CPI.TOTL.ZG',
+  unemployment: 'SL.UEM.TOTL.ZS',
+  current_account: 'BN.CAB.XOKA.GD.ZS',
+  gov_debt: 'GC.DOD.TOTL.GD.ZS',
+  fiscal_balance: 'GC.NLD.TOTL.GD.ZS',
+  gdp_nominal: 'NY.GDP.MKTP.CD',
+  gdp_per_capita: 'NY.GDP.PCAP.CD',
+  population: 'SP.POP.TOTL',
+};
+
+async function fetchWorldBankHistorical(indicatorId: string): Promise<DataPoint[]> {
+  const wbCode = WB_MAP[indicatorId];
+  if (!wbCode) return [];
+
+  try {
+    const url = `https://api.worldbank.org/v2/country/MYS/indicator/${wbCode}?format=json&date=2000:2025&per_page=100`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const json = await res.json();
+    const data = json?.[1] || [];
+    return data
+      .filter((d: any) => d.value !== null)
+      .map((d: any) => {
+        let val = Number(d.value);
+        if (indicatorId === 'population') val = Number((val / 1e6).toFixed(2));
+        if (indicatorId === 'gdp_nominal') val = Number((val / 1e9).toFixed(2));
+        return { date: String(d.date), value: val };
+      })
+      .sort((a: DataPoint, b: DataPoint) => a.date.localeCompare(b.date));
+  } catch {
+    return [];
+  }
+}
+
 export async function fetchIMFData(indicatorId: string): Promise<{
   historical: DataPoint[];
   forecast: DataPoint[];
@@ -70,26 +107,36 @@ export async function fetchIMFData(indicatorId: string): Promise<{
   const code = IMF_MAP[indicatorId];
   if (!code) return { historical: [], forecast: [] };
 
+  const currentYear = new Date().getFullYear();
+
+  // Try IMF DataMapper first — returns ~1980-2029 in one blob
+  let imfAll: DataPoint[] = [];
   try {
     const res = await fetch(`${IMF_BASE}/${code}/MYS`);
-    if (!res.ok) throw new Error(`IMF ${res.status}`);
-    const json = await res.json();
-    const values = json?.values?.[code]?.MYS || {};
-    const currentYear = new Date().getFullYear();
-
-    const all: DataPoint[] = Object.entries(values)
-      .map(([year, val]) => ({ date: year, value: Number(val) }))
-      .filter((d) => !isNaN(d.value))
-      .sort((a, b) => a.date.localeCompare(b.date));
-
-    return {
-      historical: all.filter((d) => Number(d.date) < currentYear),
-      forecast: all.filter((d) => Number(d.date) >= currentYear),
-    };
+    if (res.ok) {
+      const json = await res.json();
+      const values = json?.values?.[code]?.MYS || {};
+      imfAll = Object.entries(values)
+        .map(([year, val]) => ({ date: year, value: Number(val) }))
+        .filter((d) => !isNaN(d.value))
+        .sort((a, b) => a.date.localeCompare(b.date));
+    }
   } catch (e) {
     console.warn(`IMF fetch failed for ${indicatorId}:`, e);
-    return { historical: [], forecast: [] };
   }
+
+  if (imfAll.length > 0) {
+    // IMF data available — split into historical + forecast
+    // Include current year in BOTH so the chart lines connect
+    return {
+      historical: imfAll.filter((d) => Number(d.date) <= currentYear),
+      forecast: imfAll.filter((d) => Number(d.date) >= currentYear),
+    };
+  }
+
+  // Fallback: World Bank for historical only
+  const wbData = await fetchWorldBankHistorical(indicatorId);
+  return { historical: wbData, forecast: [] };
 }
 
 // ─── Curated Institutional Forecasts ────────────────────────────────

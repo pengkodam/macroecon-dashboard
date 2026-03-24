@@ -78,7 +78,7 @@ export default function ForecastTable({ indicatorName, unit, forecasts }: Foreca
       </table>
       <div className="mt-2 text-[9px] font-mono text-mist/40">
         {unit} · {forecasts.length} forecasts from {allSources.length} institutions ·
-        e=estimate f=forecast
+        e = estimate (year not finalised) · f = forecast (forward projection)
       </div>
     </div>
   );
